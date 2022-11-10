@@ -18,8 +18,8 @@ package rlp
 
 import (
 	"bytes"
-	"errors"
 	"io"
+	"reflect"
 	"testing"
 	"testing/quick"
 )
@@ -54,7 +54,7 @@ func TestCountValues(t *testing.T) {
 		if count != test.count {
 			t.Errorf("test %d: count mismatch, got %d want %d\ninput: %s", i, count, test.count, test.input)
 		}
-		if !errors.Is(err, test.err) {
+		if !reflect.DeepEqual(err, test.err) {
 			t.Errorf("test %d: err mismatch, got %q want %q\ninput: %s", i, err, test.err, test.input)
 		}
 	}
@@ -281,38 +281,5 @@ func TestAppendUint64Random(t *testing.T) {
 	config := quick.Config{MaxCountScale: 50}
 	if err := quick.Check(fn, &config); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestBytesSize(t *testing.T) {
-	tests := []struct {
-		v    []byte
-		size uint64
-	}{
-		{v: []byte{}, size: 1},
-		{v: []byte{0x1}, size: 1},
-		{v: []byte{0x7E}, size: 1},
-		{v: []byte{0x7F}, size: 1},
-		{v: []byte{0x80}, size: 2},
-		{v: []byte{0xFF}, size: 2},
-		{v: []byte{0xFF, 0xF0}, size: 3},
-		{v: make([]byte, 55), size: 56},
-		{v: make([]byte, 56), size: 58},
-	}
-
-	for _, test := range tests {
-		s := BytesSize(test.v)
-		if s != test.size {
-			t.Errorf("BytesSize(%#x) -> %d, want %d", test.v, s, test.size)
-		}
-		s = StringSize(string(test.v))
-		if s != test.size {
-			t.Errorf("StringSize(%#x) -> %d, want %d", test.v, s, test.size)
-		}
-		// Sanity check:
-		enc, _ := EncodeToBytes(test.v)
-		if uint64(len(enc)) != test.size {
-			t.Errorf("len(EncodeToBytes(%#x)) -> %d, test says %d", test.v, len(enc), test.size)
-		}
 	}
 }

@@ -18,7 +18,6 @@ package core
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -32,9 +31,8 @@ import (
 )
 
 type CommandlineUI struct {
-	in  *bufio.Reader
-	mu  sync.Mutex
-	api *UIServerAPI
+	in *bufio.Reader
+	mu sync.Mutex
 }
 
 func NewCommandlineUI() *CommandlineUI {
@@ -42,7 +40,7 @@ func NewCommandlineUI() *CommandlineUI {
 }
 
 func (ui *CommandlineUI) RegisterUIServer(api *UIServerAPI) {
-	ui.api = api
+	// noop
 }
 
 // readString reads a single line from stdin, trimming if from spaces, enforcing
@@ -61,6 +59,7 @@ func (ui *CommandlineUI) readString() string {
 }
 
 func (ui *CommandlineUI) OnInputRequired(info UserInputRequest) (UserInputResponse, error) {
+
 	fmt.Printf("## %s\n\n%s\n", info.Title, info.Prompt)
 	defer fmt.Println("-----------------------")
 	if info.IsPassword {
@@ -148,6 +147,7 @@ func (ui *CommandlineUI) ApproveTx(request *SignTxRequest) (SignTxResponse, erro
 			fmt.Printf("  * %s : %s\n", m.Typ, m.Message)
 		}
 		fmt.Println()
+
 	}
 	fmt.Printf("\n")
 	showMetadata(request.Meta)
@@ -209,6 +209,7 @@ func (ui *CommandlineUI) ApproveListing(request *ListRequest) (ListResponse, err
 
 // ApproveNewAccount prompt the user for confirmation to create new Account, and reveal to caller
 func (ui *CommandlineUI) ApproveNewAccount(request *NewAccountRequest) (NewAccountResponse, error) {
+
 	ui.mu.Lock()
 	defer ui.mu.Unlock()
 
@@ -243,33 +244,10 @@ func (ui *CommandlineUI) OnApprovedTx(tx ethapi.SignTransactionResult) {
 	}
 }
 
-func (ui *CommandlineUI) showAccounts() {
-	accounts, err := ui.api.ListAccounts(context.Background())
-	if err != nil {
-		log.Error("Error listing accounts", "err", err)
-		return
-	}
-	if len(accounts) == 0 {
-		fmt.Print("No accounts found\n")
-		return
-	}
-	var msg string
-	var out = new(strings.Builder)
-	if limit := 20; len(accounts) > limit {
-		msg = fmt.Sprintf("\nFirst %d accounts listed (%d more available).\n", limit, len(accounts)-limit)
-		accounts = accounts[:limit]
-	}
-	fmt.Fprint(out, "\n------- Available accounts -------\n")
-	for i, account := range accounts {
-		fmt.Fprintf(out, "%d. %s at %s\n", i, account.Address, account.URL)
-	}
-	fmt.Print(out.String(), msg)
-}
-
 func (ui *CommandlineUI) OnSignerStartup(info StartupInfo) {
-	fmt.Print("\n------- Signer info -------\n")
+
+	fmt.Printf("------- Signer info -------\n")
 	for k, v := range info.Info {
 		fmt.Printf("* %v : %v\n", k, v)
 	}
-	go ui.showAccounts()
 }

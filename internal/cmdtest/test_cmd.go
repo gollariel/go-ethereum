@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"regexp"
@@ -83,7 +84,7 @@ func (tt *TestCmd) Run(name string, args ...string) {
 // InputLine writes the given text to the child's stdin.
 // This method can also be called from an expect template, e.g.:
 //
-//	geth.expect(`Passphrase: {{.InputLine "password"}}`)
+//     geth.expect(`Passphrase: {{.InputLine "password"}}`)
 func (tt *TestCmd) InputLine(s string) string {
 	io.WriteString(tt.stdin, s+"\n")
 	return ""
@@ -115,13 +116,6 @@ func (tt *TestCmd) Expect(tplsource string) {
 		tt.Fatal(err)
 	}
 	tt.Logf("Matched stdout text:\n%s", want)
-}
-
-// Output reads all output from stdout, and returns the data.
-func (tt *TestCmd) Output() []byte {
-	var buf []byte
-	tt.withKillTimeout(func() { buf, _ = io.ReadAll(tt.stdout) })
-	return buf
 }
 
 func (tt *TestCmd) matchExactOutput(want []byte) error {
@@ -183,7 +177,7 @@ func (tt *TestCmd) ExpectRegexp(regex string) (*regexp.Regexp, []string) {
 func (tt *TestCmd) ExpectExit() {
 	var output []byte
 	tt.withKillTimeout(func() {
-		output, _ = io.ReadAll(tt.stdout)
+		output, _ = ioutil.ReadAll(tt.stdout)
 	})
 	tt.WaitExit()
 	if tt.Cleanup != nil {

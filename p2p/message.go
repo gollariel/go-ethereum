@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"sync/atomic"
 	"time"
 
@@ -65,7 +66,7 @@ func (msg Msg) String() string {
 
 // Discard reads any remaining payload data into a black hole.
 func (msg Msg) Discard() error {
-	_, err := io.Copy(io.Discard, msg.Payload)
+	_, err := io.Copy(ioutil.Discard, msg.Payload)
 	return err
 }
 
@@ -107,11 +108,12 @@ func Send(w MsgWriter, msgcode uint64, data interface{}) error {
 // SendItems writes an RLP with the given code and data elements.
 // For a call such as:
 //
-//	SendItems(w, code, e1, e2, e3)
+//    SendItems(w, code, e1, e2, e3)
 //
 // the message payload will be an RLP list containing the items:
 //
-//	[e1, e2, e3]
+//    [e1, e2, e3]
+//
 func SendItems(w MsgWriter, msgcode uint64, elems ...interface{}) error {
 	return Send(w, msgcode, elems)
 }
@@ -243,7 +245,7 @@ func ExpectMsg(r MsgReader, code uint64, content interface{}) error {
 	if int(msg.Size) != len(contentEnc) {
 		return fmt.Errorf("message size mismatch: got %d, want %d", msg.Size, len(contentEnc))
 	}
-	actualContent, err := io.ReadAll(msg.Payload)
+	actualContent, err := ioutil.ReadAll(msg.Payload)
 	if err != nil {
 		return err
 	}

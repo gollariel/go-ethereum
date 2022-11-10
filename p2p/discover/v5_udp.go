@@ -1,4 +1,4 @@
-// Copyright 2020 The go-ethereum Authors
+// Copyright 2019 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"sync"
 	"time"
@@ -40,6 +41,7 @@ const (
 	lookupRequestLimit      = 3  // max requests against a single node during lookup
 	findnodeResultLimit     = 16 // applies in FINDNODE handler
 	totalNodesResponseLimit = 5  // applies in waitForNodes
+	nodesResponseItemLimit  = 3  // applies in sendNodes
 
 	respTimeoutV5 = 700 * time.Millisecond
 )
@@ -52,7 +54,7 @@ type codecV5 interface {
 	// Encode encodes a packet.
 	Encode(enode.ID, string, v5wire.Packet, *v5wire.Whoareyou) ([]byte, v5wire.Nonce, error)
 
-	// Decode decodes a packet. It returns a *v5wire.Unknown packet if decryption fails.
+	// decode decodes a packet. It returns a *v5wire.Unknown packet if decryption fails.
 	// The *enode.Node return value is non-nil when the input contains a handshake response.
 	Decode([]byte, string) (enode.ID, *enode.Node, v5wire.Packet, error)
 }
@@ -303,7 +305,7 @@ func (t *UDPv5) lookupWorker(destNode *node, target enode.ID) ([]*node, error) {
 	)
 	var r []*enode.Node
 	r, err = t.findnode(unwrapNode(destNode), dists)
-	if errors.Is(err, errClosed) {
+	if err == errClosed {
 		return nil, err
 	}
 	for _, n := range r {
@@ -321,7 +323,7 @@ func lookupDistances(target, dest enode.ID) (dists []uint) {
 	td := enode.LogDist(target, dest)
 	dists = append(dists, uint(td))
 	for i := 1; len(dists) < lookupRequestLimit; i++ {
-		if td+i <= 256 {
+		if td+i < 256 {
 			dists = append(dists, uint(td+i))
 		}
 		if td-i > 0 {
@@ -345,7 +347,7 @@ func (t *UDPv5) ping(n *enode.Node) (uint64, error) {
 	}
 }
 
-// RequestENR requests n's record.
+// requestENR requests n's record.
 func (t *UDPv5) RequestENR(n *enode.Node) (*enode.Node, error) {
 	nodes, err := t.findnode(n, []uint{0})
 	if err != nil {
@@ -404,9 +406,6 @@ func (t *UDPv5) verifyResponseNode(c *callV5, r *enr.Record, distances []uint, s
 	}
 	if err := netutil.CheckRelayIP(c.node.IP(), node.IP()); err != nil {
 		return nil, err
-	}
-	if t.netrestrict != nil && !t.netrestrict.Contains(node.IP()) {
-		return nil, errors.New("not contained in netrestrict list")
 	}
 	if c.node.UDP() <= 1024 {
 		return nil, errLowPort
@@ -623,8 +622,8 @@ func (t *UDPv5) readLoop() {
 			t.log.Debug("Temporary UDP read error", "err", err)
 			continue
 		} else if err != nil {
-			// Shut down the loop for permanent errors.
-			if !errors.Is(err, io.EOF) {
+			// Shut down the loop for permament errors.
+			if err != io.EOF {
 				t.log.Debug("UDP read error", "err", err)
 			}
 			return
@@ -830,28 +829,16 @@ func packNodes(reqid []byte, nodes []*enode.Node) []*v5wire.Nodes {
 		return []*v5wire.Nodes{{ReqID: reqid, Total: 1}}
 	}
 
-	// This limit represents the available space for nodes in output packets. Maximum
-	// packet size is 1280, and out of this ~80 bytes will be taken up by the packet
-	// frame. So limiting to 1000 bytes here leaves 200 bytes for other fields of the
-	// NODES message, which is a lot.
-	const sizeLimit = 1000
-
+	total := uint8(math.Ceil(float64(len(nodes)) / 3))
 	var resp []*v5wire.Nodes
 	for len(nodes) > 0 {
-		p := &v5wire.Nodes{ReqID: reqid}
-		size := uint64(0)
-		for len(nodes) > 0 {
-			r := nodes[0].Record()
-			if size += r.Size(); size > sizeLimit {
-				break
-			}
-			p.Nodes = append(p.Nodes, r)
-			nodes = nodes[1:]
+		p := &v5wire.Nodes{ReqID: reqid, Total: total}
+		items := min(nodesResponseItemLimit, len(nodes))
+		for i := 0; i < items; i++ {
+			p.Nodes = append(p.Nodes, nodes[i].Record())
 		}
+		nodes = nodes[items:]
 		resp = append(resp, p)
-	}
-	for _, msg := range resp {
-		msg.Total = uint8(len(resp))
 	}
 	return resp
 }

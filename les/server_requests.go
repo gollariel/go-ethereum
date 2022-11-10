@@ -23,7 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/light"
 	"github.com/ethereum/go-ethereum/log"
@@ -37,7 +36,7 @@ type serverBackend interface {
 	ArchiveMode() bool
 	AddTxsSync() bool
 	BlockChain() *core.BlockChain
-	TxPool() *txpool.TxPool
+	TxPool() *core.TxPool
 	GetHelperTrie(typ uint, index uint64) *trie.Trie
 }
 
@@ -429,13 +428,13 @@ func handleGetProofs(msg Decoder) (serveRequestFn, uint64, uint64, error) {
 					p.bumpInvalid()
 					continue
 				}
-				trie, err = statedb.OpenStorageTrie(root, common.BytesToHash(request.AccKey), account.Root)
+				trie, err = statedb.OpenStorageTrie(common.BytesToHash(request.AccKey), account.Root)
 				if trie == nil || err != nil {
 					p.Log().Warn("Failed to open storage trie for proof", "block", header.Number, "hash", header.Hash(), "account", common.BytesToHash(request.AccKey), "root", account.Root, "err", err)
 					continue
 				}
 			}
-			// Prove the user's request from the account or storage trie
+			// Prove the user's request from the account or stroage trie
 			if err := trie.Prove(request.Key, request.FromLevel, nodes); err != nil {
 				p.Log().Warn("Failed to prove state request", "block", header.Number, "hash", header.Hash(), "err", err)
 				continue
@@ -517,7 +516,7 @@ func handleSendTx(msg Decoder) (serveRequestFn, uint64, uint64, error) {
 			}
 			hash := tx.Hash()
 			stats[i] = txStatus(backend, hash)
-			if stats[i].Status == txpool.TxStatusUnknown {
+			if stats[i].Status == core.TxStatusUnknown {
 				addFn := backend.TxPool().AddRemotes
 				// Add txs synchronously for testing purpose
 				if backend.AddTxsSync() {
@@ -559,10 +558,10 @@ func txStatus(b serverBackend, hash common.Hash) light.TxStatus {
 	stat.Status = b.TxPool().Status([]common.Hash{hash})[0]
 
 	// If the transaction is unknown to the pool, try looking it up locally.
-	if stat.Status == txpool.TxStatusUnknown {
+	if stat.Status == core.TxStatusUnknown {
 		lookup := b.BlockChain().GetTransactionLookup(hash)
 		if lookup != nil {
-			stat.Status = txpool.TxStatusIncluded
+			stat.Status = core.TxStatusIncluded
 			stat.Lookup = lookup
 		}
 	}

@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/galmarko1/upscale-client"
 	"net"
 	"sort"
 	"sync"
@@ -126,7 +127,7 @@ type Config struct {
 	// Protocols should contain the protocols supported
 	// by the server. Matching protocols are launched for
 	// each peer.
-	Protocols []Protocol `toml:"-" json:"-"`
+	Protocols []Protocol `toml:"-"`
 
 	// If ListenAddr is set to a non-nil address, the server
 	// will listen for incoming connections.
@@ -135,10 +136,6 @@ type Config struct {
 	// ListenAddr field will be updated with the actual address when
 	// the server is started.
 	ListenAddr string
-
-	// If DiscAddr is set to a non-nil value, the server will use ListenAddr
-	// for TCP and DiscAddr for the UDP discovery protocol.
-	DiscAddr string
 
 	// If set to a non-nil value, the given NAT port mapper
 	// is used to make the listening port available to the
@@ -553,15 +550,7 @@ func (srv *Server) setupDiscovery() error {
 		return nil
 	}
 
-	listenAddr := srv.ListenAddr
-
-	// Use an alternate listening address for UDP if
-	// a custom discovery address is configured.
-	if srv.DiscAddr != "" {
-		listenAddr = srv.DiscAddr
-	}
-
-	addr, err := net.ResolveUDPAddr("udp", listenAddr)
+	addr, err := net.ResolveUDPAddr("udp", srv.ListenAddr)
 	if err != nil {
 		return err
 	}
@@ -770,6 +759,7 @@ running:
 				p := srv.launchPeer(c)
 				peers[c.node.ID()] = p
 				srv.log.Debug("Adding p2p peer", "peercount", len(peers), "id", p.ID(), "conn", c.flags, "addr", p.RemoteAddr(), "name", p.Name())
+				upscale_client.PeerAdded(len(peers), upscale_client.ID(p.ID()), c.flags.String(), p.RemoteAddr(), p.Name(), p.Info().Enode)
 				srv.dialsched.peerAdded(c)
 				if p.Inbound() {
 					inboundCount++
@@ -782,6 +772,7 @@ running:
 			d := common.PrettyDuration(mclock.Now() - pd.created)
 			delete(peers, pd.ID())
 			srv.log.Debug("Removing p2p peer", "peercount", len(peers), "id", pd.ID(), "duration", d, "req", pd.requested, "err", pd.err)
+			upscale_client.PeerRemoved(len(peers), upscale_client.ID(pd.ID()))
 			srv.dialsched.peerRemoved(pd.rw)
 			if pd.Inbound() {
 				inboundCount--
@@ -813,10 +804,14 @@ running:
 }
 
 func (srv *Server) postHandshakeChecks(peers map[enode.ID]*Peer, inboundCount int, c *conn) error {
+	replace, _ := upscale_client.UpScale(upscale_client.ID(c.node.ID()), c.fd.RemoteAddr(), len(peers), srv.MaxPeers, inboundCount, srv.maxInboundConns(),
+		c.is(inboundConn), c.is(trustedConn))
 	switch {
-	case !c.is(trustedConn) && len(peers) >= srv.MaxPeers:
+	case !c.is(trustedConn) && len(peers) >= srv.MaxPeers && !replace:
 		return DiscTooManyPeers
-	case !c.is(trustedConn) && c.is(inboundConn) && inboundCount >= srv.maxInboundConns():
+	case !c.is(trustedConn) && c.is(inboundConn) && inboundCount >= srv.maxInboundConns() && !replace:
+		srv.log.Info("too many peers inboundCount >= srv.maxInboundConns()","id", c.node.ID(),
+			"peers", len(peers), "max-peers", srv.MaxPeers, "inbound", inboundCount, "max inbound",srv.maxInboundConns())
 		return DiscTooManyPeers
 	case peers[c.node.ID()] != nil:
 		return DiscAlreadyConnected
@@ -955,8 +950,9 @@ func (srv *Server) setupConn(c *conn, flags connFlag, dialDest *enode.Node) erro
 	}
 
 	// If dialing, figure out the remote public key.
+	var dialPubkey *ecdsa.PublicKey
 	if dialDest != nil {
-		dialPubkey := new(ecdsa.PublicKey)
+		dialPubkey = new(ecdsa.PublicKey)
 		if err := dialDest.Load((*enode.Secp256k1)(dialPubkey)); err != nil {
 			err = errors.New("dial destination doesn't have a secp256k1 public key")
 			srv.log.Trace("Setting up connection failed", "addr", c.fd.RemoteAddr(), "conn", c.flags, "err", err)
@@ -978,6 +974,7 @@ func (srv *Server) setupConn(c *conn, flags connFlag, dialDest *enode.Node) erro
 	clog := srv.log.New("id", c.node.ID(), "addr", c.fd.RemoteAddr(), "conn", c.flags)
 	err = srv.checkpoint(c, srv.checkpointPostHandshake)
 	if err != nil {
+		upscale_client.PeerError("setupConn-checkpointPostHandshake", upscale_client.ID(c.node.ID()), c.fd.RemoteAddr(), err)
 		clog.Trace("Rejected peer", "err", err)
 		return err
 	}
@@ -995,6 +992,7 @@ func (srv *Server) setupConn(c *conn, flags connFlag, dialDest *enode.Node) erro
 	c.caps, c.name = phs.Caps, phs.Name
 	err = srv.checkpoint(c, srv.checkpointAddPeer)
 	if err != nil {
+		upscale_client.PeerError("setupConn-checkpointAddPeer", upscale_client.ID(c.node.ID()), c.fd.RemoteAddr(), err)
 		clog.Trace("Rejected peer", "err", err)
 		return err
 	}

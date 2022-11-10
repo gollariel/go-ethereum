@@ -48,7 +48,7 @@ func TestNewID(t *testing.T) {
 
 func TestSubscriptions(t *testing.T) {
 	var (
-		namespaces        = []string{"eth", "bzz"}
+		namespaces        = []string{"eth", "shh", "bzz"}
 		service           = &notificationTestService{}
 		subCount          = len(namespaces)
 		notificationCount = 3
@@ -79,7 +79,7 @@ func TestSubscriptions(t *testing.T) {
 		request := map[string]interface{}{
 			"id":      i,
 			"method":  fmt.Sprintf("%s_subscribe", namespace),
-			"jsonrpc": "2.0",
+			"version": "2.0",
 			"params":  []interface{}{"someSubscription", notificationCount, i},
 		}
 		if err := out.Encode(&request); err != nil {

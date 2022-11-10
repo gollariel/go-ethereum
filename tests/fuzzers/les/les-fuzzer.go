@@ -26,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -55,13 +54,15 @@ var (
 )
 
 func makechain() (bc *core.BlockChain, addrHashes, txHashes []common.Hash) {
-	gspec := &core.Genesis{
+	db := rawdb.NewMemoryDatabase()
+	gspec := core.Genesis{
 		Config:   params.TestChainConfig,
 		Alloc:    core.GenesisAlloc{bankAddr: {Balance: bankFunds}},
 		GasLimit: 100000000,
 	}
+	genesis := gspec.MustCommit(db)
 	signer := types.HomesteadSigner{}
-	_, blocks, _ := core.GenerateChainWithGenesis(gspec, ethash.NewFaker(), testChainLen,
+	blocks, _ := core.GenerateChain(gspec.Config, genesis, ethash.NewFaker(), db, testChainLen,
 		func(i int, gen *core.BlockGen) {
 			var (
 				tx   *types.Transaction
@@ -79,7 +80,7 @@ func makechain() (bc *core.BlockChain, addrHashes, txHashes []common.Hash) {
 			addrHashes = append(addrHashes, crypto.Keccak256Hash(addr[:]))
 			txHashes = append(txHashes, tx.Hash())
 		})
-	bc, _ = core.NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, nil, ethash.NewFaker(), vm.Config{}, nil, nil)
+	bc, _ = core.NewBlockChain(db, nil, gspec.Config, ethash.NewFaker(), vm.Config{}, nil, nil)
 	if _, err := bc.InsertChain(blocks); err != nil {
 		panic(err)
 	}
@@ -87,8 +88,8 @@ func makechain() (bc *core.BlockChain, addrHashes, txHashes []common.Hash) {
 }
 
 func makeTries() (chtTrie *trie.Trie, bloomTrie *trie.Trie, chtKeys, bloomKeys [][]byte) {
-	chtTrie = trie.NewEmpty(trie.NewDatabase(rawdb.NewMemoryDatabase()))
-	bloomTrie = trie.NewEmpty(trie.NewDatabase(rawdb.NewMemoryDatabase()))
+	chtTrie, _ = trie.New(common.Hash{}, trie.NewDatabase(rawdb.NewMemoryDatabase()))
+	bloomTrie, _ = trie.New(common.Hash{}, trie.NewDatabase(rawdb.NewMemoryDatabase()))
 	for i := 0; i < testChainLen; i++ {
 		// The element in CHT is <big-endian block number> -> <block hash>
 		key := make([]byte, 8)
@@ -112,7 +113,7 @@ func init() {
 
 type fuzzer struct {
 	chain *core.BlockChain
-	pool  *txpool.TxPool
+	pool  *core.TxPool
 
 	chainLen  int
 	addr, txs []common.Hash
@@ -138,7 +139,7 @@ func newFuzzer(input []byte) *fuzzer {
 		chtKeys:   chtKeys,
 		bloomKeys: bloomKeys,
 		nonce:     uint64(len(txHashes)),
-		pool:      txpool.NewTxPool(txpool.DefaultConfig, params.TestChainConfig, chain),
+		pool:      core.NewTxPool(core.DefaultTxPoolConfig, params.TestChainConfig, chain),
 		input:     bytes.NewReader(input),
 	}
 }
@@ -230,7 +231,7 @@ func (f *fuzzer) BlockChain() *core.BlockChain {
 	return f.chain
 }
 
-func (f *fuzzer) TxPool() *txpool.TxPool {
+func (f *fuzzer) TxPool() *core.TxPool {
 	return f.pool
 }
 

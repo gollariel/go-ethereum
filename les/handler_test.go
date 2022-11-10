@@ -28,10 +28,9 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/les/downloader"
+	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/light"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/params"
@@ -406,7 +405,7 @@ func testGetProofs(t *testing.T, protocol int) {
 	accounts := []common.Address{bankAddr, userAddr1, userAddr2, signerAddr, {}}
 	for i := uint64(0); i <= bc.CurrentBlock().NumberU64(); i++ {
 		header := bc.GetHeaderByNumber(i)
-		trie, _ := trie.New(trie.StateTrieID(header.Root), trie.NewDatabase(server.db))
+		trie, _ := trie.New(header.Root, trie.NewDatabase(server.db))
 
 		for _, acc := range accounts {
 			req := ProofReq{
@@ -457,7 +456,7 @@ func testGetStaleProof(t *testing.T, protocol int) {
 		var expected []rlp.RawValue
 		if wantOK {
 			proofsV2 := light.NewNodeSet()
-			t, _ := trie.New(trie.StateTrieID(header.Root), trie.NewDatabase(server.db))
+			t, _ := trie.New(header.Root, trie.NewDatabase(server.db))
 			t.Prove(account, 0, proofsV2)
 			expected = proofsV2.NodeList()
 		}
@@ -513,7 +512,7 @@ func testGetCHTProofs(t *testing.T, protocol int) {
 		AuxData: [][]byte{rlp},
 	}
 	root := light.GetChtRoot(server.db, 0, bc.GetHeaderByNumber(config.ChtSize-1).Hash())
-	trie, _ := trie.New(trie.TrieID(root), trie.NewDatabase(rawdb.NewTable(server.db, string(rawdb.ChtTablePrefix))))
+	trie, _ := trie.New(root, trie.NewDatabase(rawdb.NewTable(server.db, light.ChtTablePrefix)))
 	trie.Prove(key, 0, &proofsV2.Proofs)
 	// Assemble the requests for the different protocols
 	requestsV2 := []HelperTrieReq{{
@@ -578,7 +577,7 @@ func testGetBloombitsProofs(t *testing.T, protocol int) {
 		var proofs HelperTrieResps
 
 		root := light.GetBloomTrieRoot(server.db, 0, bc.GetHeaderByNumber(config.BloomTrieSize-1).Hash())
-		trie, _ := trie.New(trie.TrieID(root), trie.NewDatabase(rawdb.NewTable(server.db, string(rawdb.BloomTrieTablePrefix))))
+		trie, _ := trie.New(root, trie.NewDatabase(rawdb.NewTable(server.db, light.BloomTrieTablePrefix)))
 		trie.Prove(key, 0, &proofs.Proofs)
 
 		// Send the proof request and verify the response
@@ -625,20 +624,20 @@ func testTransactionStatus(t *testing.T, protocol int) {
 
 	// test error status by sending an underpriced transaction
 	tx0, _ := types.SignTx(types.NewTransaction(0, userAddr1, big.NewInt(10000), params.TxGas, nil, nil), signer, bankKey)
-	test(tx0, true, light.TxStatus{Status: txpool.TxStatusUnknown, Error: txpool.ErrUnderpriced.Error()})
+	test(tx0, true, light.TxStatus{Status: core.TxStatusUnknown, Error: core.ErrUnderpriced.Error()})
 
 	tx1, _ := types.SignTx(types.NewTransaction(0, userAddr1, big.NewInt(10000), params.TxGas, big.NewInt(100000000000), nil), signer, bankKey)
-	test(tx1, false, light.TxStatus{Status: txpool.TxStatusUnknown}) // query before sending, should be unknown
-	test(tx1, true, light.TxStatus{Status: txpool.TxStatusPending})  // send valid processable tx, should return pending
-	test(tx1, true, light.TxStatus{Status: txpool.TxStatusPending})  // adding it again should not return an error
+	test(tx1, false, light.TxStatus{Status: core.TxStatusUnknown}) // query before sending, should be unknown
+	test(tx1, true, light.TxStatus{Status: core.TxStatusPending})  // send valid processable tx, should return pending
+	test(tx1, true, light.TxStatus{Status: core.TxStatusPending})  // adding it again should not return an error
 
 	tx2, _ := types.SignTx(types.NewTransaction(1, userAddr1, big.NewInt(10000), params.TxGas, big.NewInt(100000000000), nil), signer, bankKey)
 	tx3, _ := types.SignTx(types.NewTransaction(2, userAddr1, big.NewInt(10000), params.TxGas, big.NewInt(100000000000), nil), signer, bankKey)
 	// send transactions in the wrong order, tx3 should be queued
-	test(tx3, true, light.TxStatus{Status: txpool.TxStatusQueued})
-	test(tx2, true, light.TxStatus{Status: txpool.TxStatusPending})
+	test(tx3, true, light.TxStatus{Status: core.TxStatusQueued})
+	test(tx2, true, light.TxStatus{Status: core.TxStatusPending})
 	// query again, now tx3 should be pending too
-	test(tx3, false, light.TxStatus{Status: txpool.TxStatusPending})
+	test(tx3, false, light.TxStatus{Status: core.TxStatusPending})
 
 	// generate and add a block with tx1 and tx2 included
 	gchain, _ := core.GenerateChain(params.TestChainConfig, chain.GetBlockByNumber(0), ethash.NewFaker(), server.db, 1, func(i int, block *core.BlockGen) {
@@ -664,9 +663,9 @@ func testTransactionStatus(t *testing.T, protocol int) {
 
 	// check if their status is included now
 	block1hash := rawdb.ReadCanonicalHash(server.db, 1)
-	test(tx1, false, light.TxStatus{Status: txpool.TxStatusIncluded, Lookup: &rawdb.LegacyTxLookupEntry{BlockHash: block1hash, BlockIndex: 1, Index: 0}})
+	test(tx1, false, light.TxStatus{Status: core.TxStatusIncluded, Lookup: &rawdb.LegacyTxLookupEntry{BlockHash: block1hash, BlockIndex: 1, Index: 0}})
 
-	test(tx2, false, light.TxStatus{Status: txpool.TxStatusIncluded, Lookup: &rawdb.LegacyTxLookupEntry{BlockHash: block1hash, BlockIndex: 1, Index: 1}})
+	test(tx2, false, light.TxStatus{Status: core.TxStatusIncluded, Lookup: &rawdb.LegacyTxLookupEntry{BlockHash: block1hash, BlockIndex: 1, Index: 1}})
 
 	// create a reorg that rolls them back
 	gchain, _ = core.GenerateChain(params.TestChainConfig, chain.GetBlockByNumber(0), ethash.NewFaker(), server.db, 2, func(i int, block *core.BlockGen) {})
@@ -688,8 +687,8 @@ func testTransactionStatus(t *testing.T, protocol int) {
 	msg.Discard()
 
 	// check if their status is pending again
-	test(tx1, false, light.TxStatus{Status: txpool.TxStatusPending})
-	test(tx2, false, light.TxStatus{Status: txpool.TxStatusPending})
+	test(tx1, false, light.TxStatus{Status: core.TxStatusPending})
+	test(tx2, false, light.TxStatus{Status: core.TxStatusPending})
 }
 
 func TestStopResumeLES3(t *testing.T) { testStopResume(t, lpv3) }

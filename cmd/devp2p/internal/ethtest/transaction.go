@@ -1,18 +1,18 @@
 // Copyright 2020 The go-ethereum Authors
-// This file is part of go-ethereum.
+// This file is part of the go-ethereum library.
 //
-// go-ethereum is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
+// The go-ethereum library is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// go-ethereum is distributed in the hope that it will be useful,
+// The go-ethereum library is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
+// GNU Lesser General Public License for more details.
 //
-// You should have received a copy of the GNU General Public License
-// along with go-ethereum. If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Lesser General Public License
+// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
 package ethtest
 
@@ -29,10 +29,10 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// var faucetAddr = common.HexToAddress("0x71562b71999873DB5b286dF957af199Ec94617F7")
+//var faucetAddr = common.HexToAddress("0x71562b71999873DB5b286dF957af199Ec94617F7")
 var faucetKey, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 
-func (s *Suite) sendSuccessfulTxs(t *utesting.T) error {
+func (s *Suite) sendSuccessfulTxs(t *utesting.T, isEth66 bool) error {
 	tests := []*types.Transaction{
 		getNextTxFromChain(s),
 		unknownTx(s),
@@ -48,15 +48,15 @@ func (s *Suite) sendSuccessfulTxs(t *utesting.T) error {
 			prevTx = tests[i-1]
 		}
 		// write tx to connection
-		if err := sendSuccessfulTx(s, tx, prevTx); err != nil {
+		if err := sendSuccessfulTx(s, tx, prevTx, isEth66); err != nil {
 			return fmt.Errorf("send successful tx test failed: %v", err)
 		}
 	}
 	return nil
 }
 
-func sendSuccessfulTx(s *Suite, tx *types.Transaction, prevTx *types.Transaction) error {
-	sendConn, recvConn, err := s.createSendAndRecvConns()
+func sendSuccessfulTx(s *Suite, tx *types.Transaction, prevTx *types.Transaction, isEth66 bool) error {
+	sendConn, recvConn, err := s.createSendAndRecvConns(isEth66)
 	if err != nil {
 		return err
 	}
@@ -73,10 +73,8 @@ func sendSuccessfulTx(s *Suite, tx *types.Transaction, prevTx *types.Transaction
 	if err = recvConn.peer(s.chain, nil); err != nil {
 		return fmt.Errorf("peering failed: %v", err)
 	}
-
 	// update last nonce seen
 	nonce = tx.Nonce()
-
 	// Wait for the transaction announcement
 	for {
 		switch msg := recvConn.readAndServe(s.chain, timeout).(type) {
@@ -95,7 +93,7 @@ func sendSuccessfulTx(s *Suite, tx *types.Transaction, prevTx *types.Transaction
 				}
 			}
 			return fmt.Errorf("missing transaction: got %v missing %v", recTxs, tx.Hash())
-		case *NewPooledTransactionHashes66:
+		case *NewPooledTransactionHashes:
 			txHashes := *msg
 			// if you receive an old tx propagation, read from connection again
 			if len(txHashes) == 1 && prevTx != nil {
@@ -110,41 +108,13 @@ func sendSuccessfulTx(s *Suite, tx *types.Transaction, prevTx *types.Transaction
 				}
 			}
 			return fmt.Errorf("missing transaction announcement: got %v missing %v", txHashes, tx.Hash())
-		case *NewPooledTransactionHashes:
-			txHashes := msg.Hashes
-			if len(txHashes) != len(msg.Sizes) {
-				return fmt.Errorf("invalid msg size lengths: hashes: %v sizes: %v", len(txHashes), len(msg.Sizes))
-			}
-			if len(txHashes) != len(msg.Types) {
-				return fmt.Errorf("invalid msg type lengths: hashes: %v types: %v", len(txHashes), len(msg.Types))
-			}
-			// if you receive an old tx propagation, read from connection again
-			if len(txHashes) == 1 && prevTx != nil {
-				if txHashes[0] == prevTx.Hash() {
-					continue
-				}
-			}
-			for index, gotHash := range txHashes {
-				if gotHash == tx.Hash() {
-					if msg.Sizes[index] != uint32(tx.Size()) {
-						return fmt.Errorf("invalid tx size: got %v want %v", msg.Sizes[index], tx.Size())
-					}
-					if msg.Types[index] != tx.Type() {
-						return fmt.Errorf("invalid tx type: got %v want %v", msg.Types[index], tx.Type())
-					}
-					// Ok
-					return nil
-				}
-			}
-			return fmt.Errorf("missing transaction announcement: got %v missing %v", txHashes, tx.Hash())
-
 		default:
 			return fmt.Errorf("unexpected message in sendSuccessfulTx: %s", pretty.Sdump(msg))
 		}
 	}
 }
 
-func (s *Suite) sendMaliciousTxs(t *utesting.T) error {
+func (s *Suite) sendMaliciousTxs(t *utesting.T, isEth66 bool) error {
 	badTxs := []*types.Transaction{
 		getOldTxFromChain(s),
 		invalidNonceTx(s),
@@ -152,9 +122,16 @@ func (s *Suite) sendMaliciousTxs(t *utesting.T) error {
 		hugeGasPrice(s),
 		hugeData(s),
 	}
-
 	// setup receiving connection before sending malicious txs
-	recvConn, err := s.dial()
+	var (
+		recvConn *Conn
+		err      error
+	)
+	if isEth66 {
+		recvConn, err = s.dial66()
+	} else {
+		recvConn, err = s.dial()
+	}
 	if err != nil {
 		return fmt.Errorf("dial failed: %v", err)
 	}
@@ -162,10 +139,9 @@ func (s *Suite) sendMaliciousTxs(t *utesting.T) error {
 	if err = recvConn.peer(s.chain, nil); err != nil {
 		return fmt.Errorf("peering failed: %v", err)
 	}
-
 	for i, tx := range badTxs {
 		t.Logf("Testing malicious tx propagation: %v\n", i)
-		if err = sendMaliciousTx(s, tx); err != nil {
+		if err = sendMaliciousTx(s, tx, isEth66); err != nil {
 			return fmt.Errorf("malicious tx test failed:\ntx: %v\nerror: %v", tx, err)
 		}
 	}
@@ -173,8 +149,17 @@ func (s *Suite) sendMaliciousTxs(t *utesting.T) error {
 	return checkMaliciousTxPropagation(s, badTxs, recvConn)
 }
 
-func sendMaliciousTx(s *Suite, tx *types.Transaction) error {
-	conn, err := s.dial()
+func sendMaliciousTx(s *Suite, tx *types.Transaction, isEth66 bool) error {
+	// setup connection
+	var (
+		conn *Conn
+		err  error
+	)
+	if isEth66 {
+		conn, err = s.dial66()
+	} else {
+		conn, err = s.dial()
+	}
 	if err != nil {
 		return fmt.Errorf("dial failed: %v", err)
 	}
@@ -182,7 +167,6 @@ func sendMaliciousTx(s *Suite, tx *types.Transaction) error {
 	if err = conn.peer(s.chain, nil); err != nil {
 		return fmt.Errorf("peering failed: %v", err)
 	}
-
 	// write malicious tx
 	if err = conn.Write(&Transactions{tx}); err != nil {
 		return fmt.Errorf("failed to write to connection: %v", err)
@@ -198,7 +182,7 @@ func sendMultipleSuccessfulTxs(t *utesting.T, s *Suite, txs []*types.Transaction
 	txMsg := Transactions(txs)
 	t.Logf("sending %d txs\n", len(txs))
 
-	sendConn, recvConn, err := s.createSendAndRecvConns()
+	sendConn, recvConn, err := s.createSendAndRecvConns(true)
 	if err != nil {
 		return err
 	}
@@ -210,29 +194,23 @@ func sendMultipleSuccessfulTxs(t *utesting.T, s *Suite, txs []*types.Transaction
 	if err = recvConn.peer(s.chain, nil); err != nil {
 		return fmt.Errorf("peering failed: %v", err)
 	}
-
 	// Send the transactions
 	if err = sendConn.Write(&txMsg); err != nil {
 		return fmt.Errorf("failed to write message to connection: %v", err)
 	}
-
 	// update nonce
 	nonce = txs[len(txs)-1].Nonce()
-
-	// Wait for the transaction announcement(s) and make sure all sent txs are being propagated.
-	// all txs should be announced within a couple announcements.
+	// Wait for the transaction announcement(s) and make sure all sent txs are being propagated
 	recvHashes := make([]common.Hash, 0)
-
-	for i := 0; i < 20; i++ {
+	// all txs should be announced within 3 announcements
+	for i := 0; i < 3; i++ {
 		switch msg := recvConn.readAndServe(s.chain, timeout).(type) {
 		case *Transactions:
 			for _, tx := range *msg {
 				recvHashes = append(recvHashes, tx.Hash())
 			}
-		case *NewPooledTransactionHashes66:
-			recvHashes = append(recvHashes, *msg...)
 		case *NewPooledTransactionHashes:
-			recvHashes = append(recvHashes, msg.Hashes...)
+			recvHashes = append(recvHashes, *msg...)
 		default:
 			if !strings.Contains(pretty.Sdump(msg), "i/o timeout") {
 				return fmt.Errorf("unexpected message while waiting to receive txs: %s", pretty.Sdump(msg))
@@ -276,13 +254,8 @@ func checkMaliciousTxPropagation(s *Suite, txs []*types.Transaction, conn *Conn)
 		if len(badTxs) > 0 {
 			return fmt.Errorf("received %d bad txs: \n%v", len(badTxs), badTxs)
 		}
-	case *NewPooledTransactionHashes66:
-		badTxs, _ := compareReceivedTxs(*msg, txs)
-		if len(badTxs) > 0 {
-			return fmt.Errorf("received %d bad txs: \n%v", len(badTxs), badTxs)
-		}
 	case *NewPooledTransactionHashes:
-		badTxs, _ := compareReceivedTxs(msg.Hashes, txs)
+		badTxs, _ := compareReceivedTxs(*msg, txs)
 		if len(badTxs) > 0 {
 			return fmt.Errorf("received %d bad txs: \n%v", len(badTxs), badTxs)
 		}

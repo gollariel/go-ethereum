@@ -284,7 +284,6 @@ func TestUDPv4_findnode(t *testing.T) {
 		test.waitPacketOut(func(p *v4wire.Neighbors, to *net.UDPAddr, hash []byte) {
 			if len(p.Nodes) != len(want) {
 				t.Errorf("wrong number of results: got %d, want %d", len(p.Nodes), bucketSize)
-				return
 			}
 			for i, n := range p.Nodes {
 				if n.ID.ID() != want[i].ID() {
@@ -313,7 +312,7 @@ func TestUDPv4_findnodeMultiReply(t *testing.T) {
 	test.table.db.UpdateLastPingReceived(rid, test.remoteaddr.IP, time.Now())
 
 	// queue a pending findnode request
-	resultc, errc := make(chan []*node, 1), make(chan error, 1)
+	resultc, errc := make(chan []*node), make(chan error)
 	go func() {
 		rid := encodePubkey(&test.remotekey.PublicKey).id()
 		ns, err := test.udp.findnode(rid, test.remoteaddr, testTarget)
@@ -490,7 +489,7 @@ func TestUDPv4_EIP868(t *testing.T) {
 			t.Fatalf("invalid record: %v", err)
 		}
 		if !reflect.DeepEqual(n, wantNode) {
-			t.Fatalf("wrong node in ENRResponse: %v", n)
+			t.Fatalf("wrong node in enrResponse: %v", n)
 		}
 	})
 }

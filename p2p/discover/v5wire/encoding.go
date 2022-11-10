@@ -1,4 +1,4 @@
-// Copyright 2020 The go-ethereum Authors
+// Copyright 2019 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -65,7 +65,7 @@ type (
 	handshakeAuthData struct {
 		h struct {
 			SrcID      enode.ID
-			SigSize    byte // signature data
+			SigSize    byte // ignature data
 			PubkeySize byte // offset of
 		}
 		// Trailing variable-size data.
@@ -89,10 +89,6 @@ const (
 	version         = 1
 	minVersion      = 1
 	sizeofMaskingIV = 16
-
-	// The minimum size of any Discovery v5 packet is 63 bytes.
-	// Should reject packets smaller than minPacketSize.
-	minPacketSize = 63
 
 	minMessageSize      = 48 // this refers to data after static headers
 	randomPacketMsgSize = 20
@@ -118,7 +114,6 @@ var (
 
 // Public errors.
 var (
-	// ErrInvalidReqID represents error when the ID is invalid.
 	ErrInvalidReqID = errors.New("request ID larger than 8 bytes")
 )
 
@@ -305,7 +300,7 @@ func (c *Codec) encodeWhoareyou(toID enode.ID, packet *Whoareyou) (Header, error
 	return head, nil
 }
 
-// encodeHandshakeHeader encodes the handshake message packet header.
+// encodeHandshakeMessage encodes the handshake message packet header.
 func (c *Codec) encodeHandshakeHeader(toID enode.ID, addr string, challenge *Whoareyou) (Header, *session, error) {
 	// Ensure calling code sets challenge.node.
 	if challenge.Node == nil {
@@ -342,7 +337,7 @@ func (c *Codec) encodeHandshakeHeader(toID enode.ID, addr string, challenge *Who
 	return head, session, err
 }
 
-// makeHandshakeAuth creates the auth header on a request packet following WHOAREYOU.
+// encodeAuthHeader creates the auth header on a request packet following WHOAREYOU.
 func (c *Codec) makeHandshakeAuth(toID enode.ID, addr string, challenge *Whoareyou) (*handshakeAuthData, *session, error) {
 	auth := new(handshakeAuthData)
 	auth.h.SrcID = c.localnode.ID()
@@ -384,7 +379,7 @@ func (c *Codec) makeHandshakeAuth(toID enode.ID, addr string, challenge *Whoarey
 	return auth, sec, err
 }
 
-// encodeMessageHeader encodes an encrypted message packet.
+// encodeMessage encodes an encrypted message packet.
 func (c *Codec) encodeMessageHeader(toID enode.ID, s *session) (Header, error) {
 	head := c.makeHeader(toID, flagMessage, 0)
 
@@ -420,10 +415,10 @@ func (c *Codec) encryptMessage(s *session, p Packet, head *Header, headerData []
 
 // Decode decodes a discovery packet.
 func (c *Codec) Decode(input []byte, addr string) (src enode.ID, n *enode.Node, p Packet, err error) {
-	if len(input) < minPacketSize {
+	// Unmask the static header.
+	if len(input) < sizeofStaticPacketData {
 		return enode.ID{}, nil, nil, errTooShort
 	}
-	// Unmask the static header.
 	var head Header
 	copy(head.IV[:], input[:sizeofMaskingIV])
 	mask := head.mask(c.localnode.ID())
@@ -529,7 +524,7 @@ func (c *Codec) decodeHandshake(fromAddr string, head *Header) (n *enode.Node, a
 	if err != nil {
 		return nil, auth, nil, errInvalidAuthKey
 	}
-	// Derive session keys.
+	// Derive sesssion keys.
 	session := deriveKeys(sha256.New, c.privkey, ephkey, auth.h.SrcID, c.localnode.ID(), cdata)
 	session = session.keysFlipped()
 	return n, auth, session, nil
@@ -601,7 +596,7 @@ func (c *Codec) decodeMessage(fromAddr string, head *Header, headerData, msgData
 	// Try decrypting the message.
 	key := c.sc.readKey(auth.SrcID, fromAddr)
 	msg, err := c.decryptMessage(msgData, head.Nonce[:], headerData, key)
-	if errors.Is(err, errMessageDecrypt) {
+	if err == errMessageDecrypt {
 		// It didn't work. Start the handshake since this is an ordinary message packet.
 		return &Unknown{Nonce: head.Nonce}, nil
 	}
@@ -637,7 +632,7 @@ func (h *StaticHeader) checkValid(packetLen int) error {
 	return nil
 }
 
-// mask returns a cipher for 'masking' / 'unmasking' packet headers.
+// headerMask returns a cipher for 'masking' / 'unmasking' packet headers.
 func (h *Header) mask(destID enode.ID) cipher.Stream {
 	block, err := aes.NewCipher(destID[:16])
 	if err != nil {

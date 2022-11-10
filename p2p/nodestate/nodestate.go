@@ -117,7 +117,7 @@ type (
 		decode func([]byte) (interface{}, error)
 	}
 
-	// Setup contains the list of flags and fields used by the application
+	// stateSetup contains the list of flags and fields used by the application
 	Setup struct {
 		Version uint
 		flags   []flagDefinition
@@ -808,14 +808,7 @@ func (ns *NodeStateMachine) addTimeout(n *enode.Node, mask bitMask, timeout time
 	ns.removeTimeouts(node, mask)
 	t := &nodeStateTimeout{mask: mask}
 	t.timer = ns.clock.AfterFunc(timeout, func() {
-		ns.lock.Lock()
-		defer ns.lock.Unlock()
-
-		if !ns.opStart() {
-			return
-		}
-		ns.setState(n, Flags{}, Flags{mask: t.mask, setup: ns.setup}, 0)
-		ns.opFinish()
+		ns.SetState(n, Flags{}, Flags{mask: t.mask, setup: ns.setup}, 0)
 	})
 	node.timeouts = append(node.timeouts, t)
 	if mask&ns.saveFlags != 0 {

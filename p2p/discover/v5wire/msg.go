@@ -1,4 +1,4 @@
-// Copyright 2020 The go-ethereum Authors
+// Copyright 2019 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -59,7 +59,7 @@ type (
 		Nonce Nonce
 	}
 
-	// Whoareyou contains the handshake challenge.
+	// WHOAREYOU contains the handshake challenge.
 	Whoareyou struct {
 		ChallengeData []byte   // Encoded challenge
 		Nonce         Nonce    // Nonce of request packet
@@ -73,72 +73,72 @@ type (
 		sent mclock.AbsTime // for handshake GC.
 	}
 
-	// Ping is sent during liveness checks.
+	// PING is sent during liveness checks.
 	Ping struct {
 		ReqID  []byte
 		ENRSeq uint64
 	}
 
-	// Pong is the reply to Ping.
+	// PONG is the reply to PING.
 	Pong struct {
 		ReqID  []byte
 		ENRSeq uint64
 		ToIP   net.IP // These fields should mirror the UDP envelope address of the ping
-		ToPort uint16 // packet, which provides a way to discover the external address (after NAT).
+		ToPort uint16 // packet, which provides a way to discover the the external address (after NAT).
 	}
 
-	// Findnode is a query for nodes in the given bucket.
+	// FINDNODE is a query for nodes in the given bucket.
 	Findnode struct {
 		ReqID     []byte
 		Distances []uint
 	}
 
-	// Nodes is the reply to Findnode and Topicquery.
+	// NODES is the reply to FINDNODE and TOPICQUERY.
 	Nodes struct {
 		ReqID []byte
 		Total uint8
 		Nodes []*enr.Record
 	}
 
-	// TalkRequest is an application-level request.
+	// TALKREQ is an application-level request.
 	TalkRequest struct {
 		ReqID    []byte
 		Protocol string
 		Message  []byte
 	}
 
-	// TalkResponse is the reply to TalkRequest.
+	// TALKRESP is the reply to TALKREQ.
 	TalkResponse struct {
 		ReqID   []byte
 		Message []byte
 	}
 
-	// RequestTicket requests a ticket for a topic queue.
+	// REQUESTTICKET requests a ticket for a topic queue.
 	RequestTicket struct {
 		ReqID []byte
 		Topic []byte
 	}
 
-	// Ticket is the response to RequestTicket.
+	// TICKET is the response to REQUESTTICKET.
 	Ticket struct {
 		ReqID  []byte
 		Ticket []byte
 	}
 
-	// Regtopic registers the sender in a topic queue using a ticket.
+	// REGTOPIC registers the sender in a topic queue using a ticket.
 	Regtopic struct {
 		ReqID  []byte
 		Ticket []byte
 		ENR    *enr.Record
 	}
 
-	// Regconfirmation is the reply to Regtopic.
+	// REGCONFIRMATION is the reply to REGTOPIC.
 	Regconfirmation struct {
 		ReqID      []byte
 		Registered bool
 	}
 
-	// TopicQuery asks for nodes with the given topic.
+	// TOPICQUERY asks for nodes with the given topic.
 	TopicQuery struct {
 		ReqID []byte
 		Topic []byte

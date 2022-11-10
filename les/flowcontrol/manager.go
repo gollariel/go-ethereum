@@ -55,12 +55,13 @@ var (
 // ClientManager controls the capacity assigned to the clients of a server.
 // Since ServerParams guarantee a safe lower estimate for processable requests
 // even in case of all clients being active, ClientManager calculates a
-// corrugated buffer value and usually allows a higher remaining buffer value
+// corrigated buffer value and usually allows a higher remaining buffer value
 // to be returned with each reply.
 type ClientManager struct {
-	clock mclock.Clock
-	lock  sync.Mutex
-	stop  chan chan struct{}
+	clock     mclock.Clock
+	lock      sync.Mutex
+	enabledCh chan struct{}
+	stop      chan chan struct{}
 
 	curve                                      PieceWiseLinear
 	sumRecharge, totalRecharge, totalConnected uint64
@@ -153,7 +154,7 @@ func (cm *ClientManager) SetRechargeCurve(curve PieceWiseLinear) {
 	}
 }
 
-// SetCapacityLimits sets a threshold value used for raising capFactor.
+// SetCapacityRaiseThreshold sets a threshold value used for raising capFactor.
 // Either if the difference between total allowed and connected capacity is less
 // than this threshold or if their ratio is less than capacityRaiseThresholdRatio
 // then capFactor is allowed to slowly raise.
@@ -223,7 +224,7 @@ func (cm *ClientManager) processed(node *ClientNode, maxCost, realCost uint64, n
 	cm.updateBuffer(node, int64(maxCost-realCost), now)
 }
 
-// updateBuffer recalculates the corrected buffer value, adds the given value to it
+// updateBuffer recalulates the corrected buffer value, adds the given value to it
 // and updates the node's actual buffer value if possible
 func (cm *ClientManager) updateBuffer(node *ClientNode, add int64, now mclock.AbsTime) {
 	cm.lock.Lock()

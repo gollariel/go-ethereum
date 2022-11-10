@@ -52,8 +52,11 @@ func TestDifficulty(t *testing.T) {
 
 	// files are 2 years old, contains strange values
 	dt.skipLoad("difficultyCustomHomestead\\.json")
+	dt.skipLoad("difficultyMorden\\.json")
+	dt.skipLoad("difficultyOlimpic\\.json")
 
 	dt.config("Ropsten", *params.RopstenChainConfig)
+	dt.config("Morden", *params.RopstenChainConfig)
 	dt.config("Frontier", params.ChainConfig{})
 
 	dt.config("Homestead", params.ChainConfig{
@@ -72,12 +75,6 @@ func TestDifficulty(t *testing.T) {
 	})
 	dt.config("EIP2384", params.ChainConfig{
 		MuirGlacierBlock: big.NewInt(0),
-	})
-	dt.config("EIP4345", params.ChainConfig{
-		ArrowGlacierBlock: big.NewInt(0),
-	})
-	dt.config("EIP5133", params.ChainConfig{
-		GrayGlacierBlock: big.NewInt(0),
 	})
 	dt.config("difficulty.json", mainnetChainConfig)
 

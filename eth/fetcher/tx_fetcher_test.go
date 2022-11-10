@@ -1,4 +1,4 @@
-// Copyright 2019 The go-ethereum Authors
+// Copyright 2020 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -25,7 +25,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/mclock"
-	"github.com/ethereum/go-ethereum/core/txpool"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -304,6 +304,7 @@ func TestTransactionFetcherSingletonRequesting(t *testing.T) {
 func TestTransactionFetcherFailedRescheduling(t *testing.T) {
 	// Create a channel to control when tx requests can fail
 	proceed := make(chan struct{})
+
 	testTransactionFetcherParallel(t, txFetcherTest{
 		init: func() *TxFetcher {
 			return NewTxFetcher(
@@ -869,9 +870,9 @@ func TestTransactionFetcherUnderpricedDedup(t *testing.T) {
 					errs := make([]error, len(txs))
 					for i := 0; i < len(errs); i++ {
 						if i%2 == 0 {
-							errs[i] = txpool.ErrUnderpriced
+							errs[i] = core.ErrUnderpriced
 						} else {
-							errs[i] = txpool.ErrReplaceUnderpriced
+							errs[i] = core.ErrReplaceUnderpriced
 						}
 					}
 					return errs
@@ -941,7 +942,7 @@ func TestTransactionFetcherUnderpricedDoSProtection(t *testing.T) {
 				func(txs []*types.Transaction) []error {
 					errs := make([]error, len(txs))
 					for i := 0; i < len(errs); i++ {
-						errs[i] = txpool.ErrUnderpriced
+						errs[i] = core.ErrUnderpriced
 					}
 					return errs
 				},
@@ -1011,7 +1012,7 @@ func TestTransactionFetcherOutOfBoundDeliveries(t *testing.T) {
 }
 
 // Tests that dropping a peer cleans out all internal data structures in all the
-// live or dangling stages.
+// live or danglng stages.
 func TestTransactionFetcherDrop(t *testing.T) {
 	testTransactionFetcherParallel(t, txFetcherTest{
 		init: func() *TxFetcher {
@@ -1121,7 +1122,7 @@ func TestTransactionFetcherDropRescheduling(t *testing.T) {
 }
 
 // This test reproduces a crash caught by the fuzzer. The root cause was a
-// dangling transaction timing out and clashing on re-add with a concurrently
+// dangling transaction timing out and clashing on readd with a concurrently
 // announced one.
 func TestTransactionFetcherFuzzCrash01(t *testing.T) {
 	testTransactionFetcherParallel(t, txFetcherTest{
@@ -1148,7 +1149,7 @@ func TestTransactionFetcherFuzzCrash01(t *testing.T) {
 }
 
 // This test reproduces a crash caught by the fuzzer. The root cause was a
-// dangling transaction getting peer-dropped and clashing on re-add with a
+// dangling transaction getting peer-dropped and clashing on readd with a
 // concurrently announced one.
 func TestTransactionFetcherFuzzCrash02(t *testing.T) {
 	testTransactionFetcherParallel(t, txFetcherTest{
@@ -1261,16 +1262,6 @@ func testTransactionFetcher(t *testing.T, tt txFetcherTest) {
 
 	fetcher.Start()
 	defer fetcher.Stop()
-
-	defer func() { // drain the wait chan on exit
-		for {
-			select {
-			case <-wait:
-			default:
-				return
-			}
-		}
-	}()
 
 	// Crunch through all the test steps and execute them
 	for i, step := range tt.steps {

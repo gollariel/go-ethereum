@@ -22,7 +22,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common/mclock"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/les/flowcontrol"
@@ -50,7 +49,7 @@ type ethBackend interface {
 	BloomIndexer() *core.ChainIndexer
 	ChainDb() ethdb.Database
 	Synced() bool
-	TxPool() *txpool.TxPool
+	TxPool() *core.TxPool
 }
 
 type LesServer struct {
@@ -160,15 +159,21 @@ func (s *LesServer) APIs() []rpc.API {
 	return []rpc.API{
 		{
 			Namespace: "les",
-			Service:   NewLightAPI(&s.lesCommons),
+			Version:   "1.0",
+			Service:   NewPrivateLightAPI(&s.lesCommons),
+			Public:    false,
 		},
 		{
 			Namespace: "les",
-			Service:   NewLightServerAPI(s),
+			Version:   "1.0",
+			Service:   NewPrivateLightServerAPI(s),
+			Public:    false,
 		},
 		{
 			Namespace: "debug",
-			Service:   NewDebugAPI(s),
+			Version:   "1.0",
+			Service:   NewPrivateDebugAPI(s),
+			Public:    false,
 		},
 	}
 }
