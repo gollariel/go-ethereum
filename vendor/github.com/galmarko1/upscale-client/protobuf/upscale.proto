@@ -1,0 +1,54 @@
+
+syntax = "proto3";
+
+package protobuf;
+option go_package = "github.com/galmarko1/upscale-client/protobuf";
+
+enum typeOfUpdate {
+  initial = 0;
+  final = 1;
+  normal = 2;
+}
+service Upscale {
+  rpc Contribution(stream ContributionRequest) returns (ContributionReply) {}
+  rpc Opportunity(OpportunityRequest) returns (OpportunityReply) {}
+}
+
+message ContributionRequest{
+  typeOfUpdate typeOfUpdate = 1;
+  repeated Entry entries = 3;
+}
+
+message Entry {
+  PeerInfo peerInfo = 2;
+  int32 txAdded = 3;
+  int32 timeSpan = 4;
+
+}
+
+message PeerID{
+  bytes ID = 1;
+}
+
+message PeerInfo {
+  string flags = 1;
+  string remoteAddress = 2;
+  string name = 3;
+  string enode = 4;
+  PeerID  peerID = 5;
+}
+
+message OpportunityRequest{
+  PeerInfo peerInfo = 1;
+}
+
+message OpportunityReply{
+  bool replace = 1;
+  repeated PeerID replaceOptions = 2;
+}
+
+message ContributionReply{
+}
+
+
+
